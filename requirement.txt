@@ -1,0 +1,2 @@
+依赖一键安装指令
+pip install torch torchvision pillow opencv-python mtcnn numpy pandas matplotlib seaborn scikit-learn tqdm transformers  streamlit streamlit-webrtc
