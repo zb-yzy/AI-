@@ -1,0 +1,367 @@
+import os
+import torch
+import torch.nn as nn
+import torch.optim as optim
+from torch.utils.data import DataLoader, Dataset
+from torchvision import transforms, models
+from torchvision.models.resnet import ResNet18_Weights
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+from PIL import Image
+import numpy as np
+from sklearn.metrics import confusion_matrix
+import seaborn as sns
+
+# ===================== 【用户配置 - 无随机，超参与原代码完全一致】 =====================
+FLAT_DATA_ROOT = "../../data/movie"
+TRAIN_DIR = os.path.join(FLAT_DATA_ROOT, "train")
+TEST_DIR = os.path.join(FLAT_DATA_ROOT, "test")
+RESULT_NAME = "Movie_FlatNoRand"
+NUM_CLASSES = 7
+IMG_SIZE = 224
+BATCH_SIZE = 32
+LR = 1e-5
+CONTINUE_EPOCHS = 10
+DEVICE = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+SAVE_DIR = "../../results/results2/Movie_train_results"
+MODEL_SAVE_PATH = os.path.join(SAVE_DIR, f"best_model_{RESULT_NAME}.pth")
+LOG_PATH = os.path.join(SAVE_DIR, f"train_log_{RESULT_NAME}.txt")
+CURVE_SAVE_PATH = os.path.join(SAVE_DIR, f"train_curve_{RESULT_NAME}.png")
+CM_SAVE_PATH = os.path.join(SAVE_DIR, f"confusion_matrix_{RESULT_NAME}.png")
+PRED_SAVE_DIR = os.path.join(SAVE_DIR, "test_predictions")
+os.makedirs(PRED_SAVE_DIR, exist_ok=True)
+
+
+# ==================================================================================
+
+# 自定义数据集：读取平铺文件夹，从文件名解析标签
+class FlatImageDataset(Dataset):
+    def __init__(self, data_dir, transform=None):
+        self.data_dir = data_dir
+        self.transform = transform
+        self.file_list = sorted([f for f in os.listdir(data_dir) if f.lower().endswith(("jpg", "jpeg", "png"))])
+        # 提取全部标签并生成映射（和原数据集顺序保持一致）
+        label_set = set()
+        for fname in self.file_list:
+            tag = fname.split("_")[-1].split(".")[0]
+            label_set.add(tag)
+        self.class_names = sorted(list(label_set))
+        self.label2idx = {cls: i for i, cls in enumerate(self.class_names)}
+
+    def __len__(self):
+        return len(self.file_list)
+
+    def __getitem__(self, idx):
+        fname = self.file_list[idx]
+        img_path = os.path.join(self.data_dir, fname)
+        img = Image.open(img_path).convert("RGB")
+        # 从文件名解析标签
+        label_tag = fname.split("_")[-1].split(".")[0]
+        label = self.label2idx[label_tag]
+        if self.transform is not None:
+            img = self.transform(img)
+        return img, label
+
+
+# ===================== 训练 & 测试函数 =====================
+def train_one_epoch(model, loader, criterion, optimizer, device):
+    model.train()
+    total_loss, correct, total = 0.0, 0, 0
+    pbar = tqdm(loader, desc="训练", leave=False)
+    for img, lab in pbar:
+        img, lab = img.to(device), lab.to(device)
+        out = model(img)
+        loss = criterion(out, lab)
+        optimizer.zero_grad()
+        loss.backward()
+        optimizer.step()
+
+        total_loss += loss.item() * img.size(0)
+        _, pred = torch.max(out, 1)
+        correct += (pred == lab).sum().item()
+        total += lab.size(0)
+        pbar.set_postfix(loss=f"{loss.item():.3f}", acc=f"{100 * correct / total:.2f}%")
+    return total_loss / total, correct / total
+
+
+def test(model, loader, criterion, device, num_classes=NUM_CLASSES):
+    model.eval()
+    total_loss, correct, total = 0.0, 0, 0
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        pbar = tqdm(loader, desc="测试", leave=False)
+        for img, lab in pbar:
+            img, lab = img.to(device), lab.to(device)
+            out = model(img)
+            loss = criterion(out, lab)
+            total_loss += loss.item() * img.size(0)
+            _, pred = torch.max(out, 1)
+            correct += (pred == lab).sum().item()
+            total += lab.size(0)
+            all_preds.extend(pred.cpu().numpy())
+            all_labels.extend(lab.cpu().numpy())
+            pbar.set_postfix(loss=f"{loss.item():.3f}", acc=f"{100 * correct / total:.2f}%")
+    # 总体准确率
+    overall_acc = correct / total
+    # 计算每一类准确率
+    per_class_acc_list = []
+    y_true_arr = np.array(all_labels)
+    y_pred_arr = np.array(all_preds)
+    for c in range(num_classes):
+        mask = (y_true_arr == c)
+        total_cls = mask.sum()
+        if total_cls == 0:
+            per_class_acc_list.append(0.0)
+        else:
+            right = np.sum((y_pred_arr == c) & mask)
+            per_class_acc_list.append(right / total_cls)
+    # 均衡准确率：7类准确率求和除以7
+    balanced_acc = np.mean(per_class_acc_list)
+    return total_loss / total, overall_acc, balanced_acc, all_labels, all_preds
+
+
+def write_log(epoch, train_loss, train_acc, test_loss, test_acc, balanced_acc):
+    with open(LOG_PATH, 'a', encoding='utf-8') as f:
+        f.write(
+            f"Epoch {epoch},train_loss={train_loss:.4f},train_acc={train_acc:.4f},"
+            f"test_loss={test_loss:.4f},test_acc={test_acc:.4f},balanced_acc={balanced_acc:.4f}\n")
+
+
+# ===================== 绘制混淆矩阵 =====================
+def plot_confusion_matrix(y_true, y_pred, class_names, save_path):
+    cm = confusion_matrix(y_true, y_pred)
+    cm_normalized = cm.astype('float') / cm.sum(axis=1, keepdims=True)
+
+    plt.figure(figsize=(10, 8))
+    sns.heatmap(cm_normalized, annot=True, fmt=".2f", cmap="Blues",
+                xticklabels=class_names, yticklabels=class_names)
+    plt.xlabel("预测标签")
+    plt.ylabel("真实标签")
+    plt.title("混淆矩阵(比例)")
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=200)
+    plt.close()
+    print(f"✅ 混淆矩阵已保存至: {save_path}")
+
+
+# ===================== 保存测试预测样例（修复目录不存在报错） =====================
+def save_test_examples(model, loader, device, save_dir, max_save=10):
+    os.makedirs(save_dir, exist_ok=True)
+    if os.path.exists(save_dir):
+        for f in os.listdir(save_dir):
+            file_path = os.path.join(save_dir, f)
+            if os.path.isfile(file_path):
+                os.remove(file_path)
+
+    model.eval()
+    class_names = loader.dataset.class_names
+    success_count = 0
+    fail_count = 0
+
+    with torch.no_grad():
+        for imgs, labels in loader:
+            imgs = imgs.to(device)
+            outputs = model(imgs)
+            _, preds = torch.max(outputs, 1)
+
+            for i in range(imgs.size(0)):
+                true_lab = labels[i].item()
+                pred_lab = preds[i].item()
+                img_tensor = imgs[i].cpu()
+
+                mean = torch.tensor([0.485, 0.456, 0.406]).view(3, 1, 1)
+                std = torch.tensor([0.229, 0.224, 0.225]).view(3, 1, 1)
+                img_tensor = img_tensor * std + mean
+                img_tensor = torch.clamp(img_tensor, 0, 1)
+                img = transforms.ToPILImage()(img_tensor)
+
+                true_name = class_names[true_lab]
+                pred_name = class_names[pred_lab]
+
+                if true_lab == pred_lab and success_count < max_save:
+                    save_path = os.path.join(save_dir,
+                                             f"success_{success_count:02d}_true_{true_name}_pred_{pred_name}.png")
+                    img.save(save_path)
+                    success_count += 1
+                elif true_lab != pred_lab and fail_count < max_save:
+                    save_path = os.path.join(save_dir, f"fail_{fail_count:02d}_true_{true_name}_pred_{pred_name}.png")
+                    img.save(save_path)
+                    fail_count += 1
+
+                if success_count >= max_save and fail_count >= max_save:
+                    print(f"✅ 已保存成功图片 {success_count} 张，失败图片 {fail_count} 张")
+                    return
+
+    print(f"✅ 预测样例保存完成：成功 {success_count} 张，失败 {fail_count} 张")
+
+
+# ===================== 主入口 =====================
+if __name__ == "__main__":
+    os.makedirs(SAVE_DIR, exist_ok=True)
+
+    # 【无随机数据增强】移除RandomHorizontalFlip、RandomRotation，仅保留确定性变换
+    train_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=3),
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    test_transform = transforms.Compose([
+        transforms.Grayscale(num_output_channels=3),
+        transforms.Resize((IMG_SIZE, IMG_SIZE)),
+        transforms.ToTensor(),
+        transforms.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])
+    ])
+
+    # 加载平铺自定义数据集
+    train_dataset = FlatImageDataset(TRAIN_DIR, transform=train_transform)
+    test_dataset = FlatImageDataset(TEST_DIR, transform=test_transform)
+    class_names = train_dataset.class_names
+
+    print(f"📊 平铺数据集加载完成")
+    print(f"类别列表: {class_names}")
+    print(f"训练集样本数: {len(train_dataset)} | 测试集样本数: {len(test_dataset)}")
+
+    # shuffle=False 彻底固定加载顺序，无任何随机
+    train_loader = DataLoader(train_dataset, BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+    test_loader = DataLoader(test_dataset, BATCH_SIZE, shuffle=False, num_workers=4, pin_memory=True)
+
+    # 构建模型（和原版一致）
+    model = models.resnet18(weights=ResNet18_Weights.IMAGENET1K_V1)
+    model.fc = nn.Linear(model.fc.in_features, NUM_CLASSES)
+    model = model.to(DEVICE)
+
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.Adam(model.parameters(), lr=LR)
+    scheduler = optim.lr_scheduler.ReduceLROnPlateau(optimizer, 'max', patience=3, factor=0.5)
+
+    # 恢复日志与训练状态
+    start_epoch = 0
+    best_acc = 0.0
+    train_losses, train_accs = [], []
+    test_losses, test_accs = [], []
+    balanced_accs = []
+
+    if os.path.exists(LOG_PATH):
+        with open(LOG_PATH, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if not line or not line.startswith("Epoch"):
+                    continue
+                parts = line.split(",")
+                try:
+                    epoch = int(parts[0].replace("Epoch ", ""))
+                    train_loss = float(parts[1].replace("train_loss=", ""))
+                    train_acc = float(parts[2].replace("train_acc=", ""))
+                    test_loss = float(parts[3].replace("test_loss=", ""))
+                    test_acc = float(parts[4].replace("test_acc=", ""))
+                    # 兼容旧日志无balanced_acc字段
+                    if len(parts) >= 6:
+                        bal_acc = float(parts[5].replace("balanced_acc=", ""))
+                    else:
+                        bal_acc = test_acc
+                    train_losses.append(train_loss)
+                    train_accs.append(train_acc)
+                    test_losses.append(test_loss)
+                    test_accs.append(test_acc)
+                    balanced_accs.append(bal_acc)
+                    if bal_acc > best_acc:
+                        best_acc = bal_acc
+                except Exception as e:
+                    continue
+        start_epoch = len(train_losses)
+        print(f"✅ 读取历史完成 | 上次训练到 epoch {start_epoch} | 最佳均衡准确率 {best_acc:.4f}")
+
+    # 加载模型权重
+    if os.path.exists(MODEL_SAVE_PATH):
+        model.load_state_dict(torch.load(MODEL_SAVE_PATH, map_location=DEVICE, weights_only=True))
+        print(f"✅ 已加载最优模型")
+
+    # 开始训练
+    print(f"\n🚀 训练开始 | 平铺无随机数据集 | 从 epoch {start_epoch + 1} 训练 {CONTINUE_EPOCHS} 轮 | 设备：{DEVICE}\n")
+
+    for i in range(CONTINUE_EPOCHS):
+        current_epoch = start_epoch + i + 1
+        print(f"======== Epoch {current_epoch} ========")
+
+        train_loss, train_acc = train_one_epoch(model, train_loader, criterion, optimizer, DEVICE)
+        test_loss, test_acc, balanced_acc, _, _ = test(model, test_loader, criterion, DEVICE, NUM_CLASSES)
+
+        train_losses.append(train_loss)
+        train_accs.append(train_acc)
+        test_losses.append(test_loss)
+        test_accs.append(test_acc)
+        balanced_accs.append(balanced_acc)
+
+        write_log(current_epoch, train_loss, train_acc, test_loss, test_acc, balanced_acc)
+        scheduler.step(balanced_acc)
+
+        if balanced_acc > best_acc:
+            best_acc = balanced_acc
+            torch.save(model.state_dict(), MODEL_SAVE_PATH)
+            print(f"✅ 新最优模型 | 均衡acc={best_acc:.4f}")
+
+        print(f"训练 loss: {train_loss:.4f}  acc: {train_acc:.4f}")
+        print(f"测试 loss: {test_loss:.4f} 总体acc: {test_acc:.4f} 均衡acc(7类均值): {balanced_acc:.4f}\n")
+
+    # 绘制三曲线：损失、总体准确率、均衡准确率
+    plt.figure(figsize=(15, 5))
+    plt.rcParams['font.sans-serif'] = ['SimHei']
+
+    plt.subplot(1, 3, 1)
+    plt.plot(train_losses, label="训练损失")
+    plt.plot(test_losses, label="测试损失")
+    plt.title("损失曲线")
+    plt.legend()
+    plt.grid()
+
+    plt.subplot(1, 3, 2)
+    plt.plot(train_accs, label="训练总体准确率")
+    plt.plot(test_accs, label="测试总体准确率")
+    plt.title("测试总体准确率曲线")
+    plt.legend()
+    plt.grid()
+
+    plt.subplot(1, 3, 3)
+    plt.plot(balanced_accs, label="均衡准确率(7类均值)", color="green")
+    plt.title("均衡准确率曲线")
+    plt.legend()
+    plt.grid()
+
+    plt.tight_layout()
+    plt.savefig(CURVE_SAVE_PATH, dpi=200)
+    plt.close()
+
+    # 生成混淆矩阵
+    print("\n📊 开始生成混淆矩阵...")
+    _, _, _, all_labels, all_preds = test(model, test_loader, criterion, DEVICE, NUM_CLASSES)
+    plot_confusion_matrix(all_labels, all_preds, class_names, CM_SAVE_PATH)
+
+    # 保存预测样例
+    print("\n📊 开始保存测试集预测样例（成功/失败）...")
+    save_test_examples(model, test_loader, DEVICE, PRED_SAVE_DIR, max_save=10)
+
+    # 打印每一类单独准确率
+    print("\n📈 每一类单独准确率明细：")
+    yt = np.array(all_labels)
+    yp = np.array(all_preds)
+    for cls_idx, cls_name in enumerate(class_names):
+        mask = yt == cls_idx
+        total = mask.sum()
+        if total == 0:
+            acc_cls = 0.0
+            print(f"{cls_name:10s} : 无样本")
+        else:
+            correct = np.sum((yp == cls_idx) & mask)
+            acc_cls = correct / total
+            print(f"{cls_name:10s} : {acc_cls:.4f}")
+    final_balanced = np.mean(
+        [np.sum((yp == c) & (yt == c)) / np.sum(yt == c) if np.sum(yt == c) != 0 else 0 for c in range(NUM_CLASSES)])
+    print(f"\n✅ 最终均衡准确率（7类平均）：{final_balanced:.4f}")
+
+    print(f"\n🏁 训练完成！所有结果保存在: {SAVE_DIR}")
+    print(f"📂 预测样例保存在: {PRED_SAVE_DIR}")
+    print(f"📂 混淆矩阵保存在: {CM_SAVE_PATH}")
