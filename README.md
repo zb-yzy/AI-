@@ -1,4 +1,4 @@
-7B 多模态人脸与文本融合情感识别系统
+7B 多模态人脸与文本融合情感识别系统（每个文件夹下有更加详细的该文件夹的README）
 
 一、项目简介
 
@@ -36,7 +36,7 @@
 
 依赖一键安装指令
 
-pip install torch torchvision pillow opencv-python mtcnn numpy pandas matplotlib seaborn scikit-learn tqdm transformers streamlit streamlit-webrtc
+pip install torch torchvision pillow opencv-python mtcnn numpy pandas matplotlib seaborn scikit-learn tqdm transformers streamlit
 
 
 
@@ -74,13 +74,17 @@ data-utils文件夹包含数据爬取、人脸截取预处理代码，该模块�
 
 &#x20;五、运行方法
 
-项目主脚本为train-test.py，通过脚本顶部CONTINUE-EPOCH参数控制运行次数（已经设置成了实验值，直接运行即可）：
+项目主脚本为train-test文件夹里所有文件，通过脚本顶部CONTINUE-EPOCH参数控制运行次数（已经设置成了实验值，直接运行即可）：
 
 
 
 若仅加载已有权重评估：将CONTINUE-EPOCH设置为0
 
 python train-test.py
+
+
+
+Demo.bat为互动网页启动程序，但网页有些卡，建议使用本地python互动
 
 
 
@@ -94,15 +98,45 @@ python train-test.py
 
 序号1\~4对应四项基础任务；movie.py电影人脸训练、review.py评论文本训练；blend.py多模态融合、balance.py样本均衡、move.py迁移训练；mid.py/late.py分别实现中期、晚期融合；attention.py实现注意力融合；可选注意力模块包含CBAM、Swin窗口、移动Swin窗口、Transformer。
 
-4\. 视频/摄像头任务：视频放入data/video，修改代码内文件名完成单视频推理；camera1.py、camera-adjusted.py分别为未添加/添加滤波窗口的实时人脸识别，配套自监督脚本实现视频情感分析。
+4\. 视频/摄像头任务：视频放入data/video，修改代码内文件名完成单视频推理；camera1.py、camera-adjusted.py分别为未添加/添加滤波窗口的实时人脸识别，配套自监督脚本实现视频情感分析体。
 
 ###### 5.实验代码较多，时间不够没必要1中每一个代码都进行训练，主要是序号234为实验重点
 
 
 
+
+
 &#x20;六、实验结果
 
+具体见报告内容，这里给出两组重要结果数据
 
+1.小样本电影封面人脸情感预测
+
+训练策略	总准确率	均衡准确率
+
+平衡前	55%    	41%
+
+平衡后	61%	        49%
+
+迁移训练	66%   	55%
+
+目前先进的方法在小样本数据集上的七类情感准确率普遍在64\~67左右，我们在不用RAF和FER两个数据集的情况下（即不使用迁移训练），在1000样本的小数据集下达到了61%的准确率，与先进方法仍存在一定距离
+
+
+
+2.多模态混合预测
+
+融合策略	总体准确率  	均衡准确率
+
+早期		40%	                 28%
+
+晚期		65%			58%
+
+中期		75%			66%
+
+注意力	81%			75%
+
+目前前沿SOTA的多模态情感识别准确率可以达到85左右，我们则是达到了最高81的准确率，虽有一定距离但是可见融合的效果还是相当好的。
 
 
 
@@ -118,7 +152,7 @@ project/
 
 ├──report/                      # 项目报告
 
-├── results/               # 训练日志、模型权重、评测输出结果
+├── results/               # 训练日志、评测输出结果，训练模型（仓库文件不包含，可在realease里面下载）
 
 ├── results-look/           #即不包含模型权重的结果
 
@@ -127,4 +161,6 @@ project/
 ├── README.md              # 项目说明文档
 
 └── requirements.txt       # Python依赖清单
+
+└── Demo.bat       # 网页启动程序
 
