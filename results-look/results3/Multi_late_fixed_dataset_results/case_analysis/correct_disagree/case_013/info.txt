@@ -1,0 +1,11 @@
+案例序号：013
+电影ID：1441893
+原图文件名：1441893_0_normal.jpg
+真实情绪标签：normal (id:4)
+图像分支单独预测：surprised (id:6)
+文本分支单独预测：normal (id:4)
+晚期融合最终预测：normal (id:4)
+判定：融合预测正确（图像、文本预测出现分歧但融合后纠正）
+
+评论原文：
+Je suis vous, vous êtes nous, nous sommes lui.

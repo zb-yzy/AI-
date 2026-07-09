@@ -1,0 +1,10 @@
+Epoch 1,train_loss=48.187173,val_loss=1.335742,val_MAE=2.914068,val_RMSE=3.457153
+Epoch 2,train_loss=4.673519,val_loss=1.273752,val_MAE=2.789185,val_RMSE=3.336975
+Epoch 3,train_loss=2.536553,val_loss=1.272958,val_MAE=2.787521,val_RMSE=3.328982
+Epoch 4,train_loss=1.638426,val_loss=1.297636,val_MAE=2.837702,val_RMSE=3.368309
+Epoch 5,train_loss=1.237248,val_loss=1.209316,val_MAE=2.659972,val_RMSE=3.193426
+Epoch 6,train_loss=1.065167,val_loss=1.199544,val_MAE=2.640205,val_RMSE=3.170827
+Epoch 7,train_loss=0.907055,val_loss=1.142648,val_MAE=2.524928,val_RMSE=3.057897
+Epoch 8,train_loss=0.839522,val_loss=1.185661,val_MAE=2.611927,val_RMSE=3.146644
+Epoch 9,train_loss=0.786776,val_loss=1.154121,val_MAE=2.548425,val_RMSE=3.075519
+Epoch 10,train_loss=0.787432,val_loss=1.878366,val_MAE=4.004665,val_RMSE=4.401079

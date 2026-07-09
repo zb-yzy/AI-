@@ -1,0 +1,10 @@
+Epoch 1,train_loss=1.8433,train_acc=0.3362,test_loss=1.6249,test_acc=0.5560,balanced_acc=0.4345
+Epoch 2,train_loss=1.3059,train_acc=0.7026,test_loss=1.4464,test_acc=0.5905,balanced_acc=0.5171
+Epoch 3,train_loss=0.9604,train_acc=0.7769,test_loss=1.3620,test_acc=0.6293,balanced_acc=0.5656
+Epoch 4,train_loss=0.6593,train_acc=0.8707,test_loss=1.3302,test_acc=0.6336,balanced_acc=0.5552
+Epoch 5,train_loss=0.4204,train_acc=0.9332,test_loss=1.3308,test_acc=0.6336,balanced_acc=0.5429
+Epoch 6,train_loss=0.2573,train_acc=0.9795,test_loss=1.3497,test_acc=0.6422,balanced_acc=0.5374
+Epoch 7,train_loss=0.1587,train_acc=0.9903,test_loss=1.3731,test_acc=0.6379,balanced_acc=0.5194
+Epoch 8,train_loss=0.1096,train_acc=0.9978,test_loss=1.3891,test_acc=0.6379,balanced_acc=0.5061
+Epoch 9,train_loss=0.0906,train_acc=1.0000,test_loss=1.3999,test_acc=0.6379,balanced_acc=0.5061
+Epoch 10,train_loss=0.0758,train_acc=1.0000,test_loss=1.4097,test_acc=0.6336,balanced_acc=0.5019
